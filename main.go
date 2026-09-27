@@ -50,6 +50,32 @@ func newSecsFlag(fs *flag.FlagSet, p *time.Duration, name string, def time.Durat
 	fs.Var(secsFlag{p}, name, usage)
 }
 
+// listFlag 让同一个选项可以写多次，也可以用逗号分隔：
+//
+//	--forward 13389:3389 --forward 13390:3390
+//	--share 3389,3390
+type listFlag struct{ vals *[]string }
+
+func (f listFlag) String() string {
+	if f.vals == nil {
+		return ""
+	}
+	return strings.Join(*f.vals, ",")
+}
+
+func (f listFlag) Set(s string) error {
+	for _, part := range strings.Split(s, ",") {
+		if part = strings.TrimSpace(part); part != "" {
+			*f.vals = append(*f.vals, part)
+		}
+	}
+	return nil
+}
+
+func newListFlag(fs *flag.FlagSet, p *[]string, name, usage string) {
+	fs.Var(listFlag{vals: p}, name, usage)
+}
+
 func main() {
 	// 不带参数运行（比如双击 exe）时进入交互菜单 ——
 	// 只打印帮助再退出，对普通用户等于"没法用"。
@@ -269,9 +295,9 @@ func printProbeReport(res ProbeResult) {
 
 // ---------- 结果汇报 ----------
 
-func printSuccess(sess *Session) {
+func printSuccess(sess *Session, dp *dataPlane) {
 	st := sess.Stats()
-	banner("✅ 通道建立成功",
+	lines := []string{
 		fmt.Sprintf("对方地址  : %s", st.Peer),
 		fmt.Sprintf("往返延迟  : %s", fmtDur(st.RTTAvg)),
 		fmt.Sprintf("延迟范围  : 最小 %s / 最大 %s", fmtDur(st.RTTMin), fmtDur(st.RTTMax)),
@@ -279,11 +305,26 @@ func printSuccess(sess *Session) {
 		fmt.Sprintf("本地端口  : %d", localPortOf(sess)),
 		"",
 		"双向都已验证通过（不只是「收到过包」，而是对方能回包）。",
-		"",
-		"接下来：",
-		"  - 把本地 UDP 端口给需要直连的程序用",
-		"  - 或在这条通道之上跑 WireGuard / QUIC 做加密隧道",
-	)
+	}
+
+	if dp != nil && dp.enabled() {
+		lines = append(lines, "", "数据面已就绪（QUIC 跑在这条 UDP 路径上，复用同一个 socket）：")
+		for _, r := range dp.opts.forwards {
+			lines = append(lines, fmt.Sprintf("  本地 %s:%d  →  对方的 %d 端口",
+				dp.opts.bindHost, r.localPort, r.remotePort))
+		}
+		for k, r := range dp.opts.shares {
+			lines = append(lines, fmt.Sprintf("  对方请求 %d 时  →  转到我本机 %s", k, r.target))
+		}
+	} else {
+		lines = append(lines,
+			"",
+			"接下来：",
+			"  - 把本地 UDP 端口给需要直连的程序用",
+			"  - 或加 --share / --forward 在这条路径上直接跑 TCP 转发",
+		)
+	}
+	banner("✅ 通道建立成功", lines...)
 }
 
 func printFailure(sess *Session, reason string, peerGiven bool) {

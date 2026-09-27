@@ -19,10 +19,13 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.21'
+          go-version: '1.23'
 
       - name: 静态检查
         run: go vet ./...
+
+      - name: 跑测试
+        run: go test ./...
 
       - name: 交叉编译
         run: go run build.go

@@ -101,6 +101,14 @@ func ProbeNAT(conn *net.UDPConn, timeout time.Duration, log func(format string, 
 	if log == nil {
 		log = func(string, ...any) {}
 	}
+	// 探测过程会给 socket 设置读/写超时。跑完必须清干净再交出去：
+	// 留一个已经过期的读超时，会让后续接手这个 socket 的代码
+	// （比如数据面的 quic-go Transport）读循环空转、一个包都收不到。
+	defer func() {
+		_ = conn.SetReadDeadline(time.Time{})
+		_ = conn.SetWriteDeadline(time.Time{})
+	}()
+
 	var res ProbeResult
 
 	for _, srv := range DefaultStunServers {

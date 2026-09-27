@@ -12,7 +12,7 @@ import (
 
 const (
 	appName     = "p2p"
-	version     = "0.1.0"
+	version     = "0.2.0"
 	DefaultPort = 45678
 )
 
@@ -61,13 +61,27 @@ func fmtDur(d time.Duration) string {
 
 func hr() { fmt.Println(strings.Repeat("=", boxWidth)) }
 
+// humanBytes 把字节数显示成 KB / MB / GB
+func humanBytes(n int64) string {
+	switch {
+	case n < 1024:
+		return fmt.Sprintf("%d B", n)
+	case n < 1024*1024:
+		return fmt.Sprintf("%.1f KB", float64(n)/1024)
+	case n < 1024*1024*1024:
+		return fmt.Sprintf("%.1f MB", float64(n)/(1024*1024))
+	default:
+		return fmt.Sprintf("%.2f GB", float64(n)/(1024*1024*1024))
+	}
+}
+
 func logf(format string, a ...any) { fmt.Printf(format+"\n", a...) }
 
 func info(format string, a ...any)  { fmt.Printf("[i] "+format+"\n", a...) }
 func okf(format string, a ...any)   { fmt.Printf("[+] "+format+"\n", a...) }
 func plain(format string, a ...any) { fmt.Printf(format+"\n", a...) }
-func warn(format string, a ...any) { fmt.Printf("[!] "+format+"\n", a...) }
-func errf(format string, a ...any) { fmt.Printf("[x] "+format+"\n", a...) }
+func warn(format string, a ...any)  { fmt.Printf("[!] "+format+"\n", a...) }
+func errf(format string, a ...any)  { fmt.Printf("[x] "+format+"\n", a...) }
 
 // banner 打印一个大标题框
 func banner(title string, lines ...string) {
@@ -100,7 +114,7 @@ func highlight(label, value string) {
 func statusStart(msg string) func() {
 	fmt.Printf("\r\x1b[K%s", msg)
 	start := time.Now()
-	return func() { fmt.Printf("\r\x1b[K") ; _ = start }
+	return func() { fmt.Printf("\r\x1b[K"); _ = start }
 }
 
 // countdown 在等待期间持续刷新一行状态
@@ -180,15 +194,33 @@ advertise 专属:
   --prompt N      多少秒没收到对方的包就提示粘贴对方地址（默认 20）
   --no-hold       成功后不保持通道，直接退出
 
+数据面（可选）—— 打通之后直接在这条通道上跑 TCP 转发:
+  --share P       开放本机 TCP 端口 P 给对方（可重复，也可用逗号分隔）
+                  写成 P=HOST:PORT 可以转到内网另一台机器
+  --forward L:R   本地监听 L，连上来的流量转发到【对方】的 R 端口
+  --token S       共享密钥，两端必须一致
+                  只在有 --share 的那一侧可以省略（会自动生成并打印）
+  --bind ADDR     --forward 的本地监听地址（默认 127.0.0.1，不对外暴露）
+
 例子:
-  A 机:  %s advertise
-  B 机:  %s connect 1.2.3.4:56789
+  纯打洞
+    A 机:  %s advertise
+    B 机:  %s connect 1.2.3.4:56789
+
+  把家里的远程桌面（3389）拉出来用
+    家里:  %s advertise --share 3389
+           把打印出来的【地址】和【数据面密钥】都发给外面
+    外面:  %s connect 1.2.3.4:56789 --forward 13389:3389 --token <密钥>
+           然后 RDP 连 127.0.0.1:13389 即可
 
 提示:
   - 两端请使用同一个 --port
   - 第一次运行请在防火墙弹窗里选择「允许」
+  - --share 是白名单：没列出来的端口一律拒绝
+  - 数据面必须两端 token 一致，否则握不上手（这是唯一的身份校验）
   - 本工具不做中继兜底：打不通就是打不通，会明确告诉你原因
-`, appName, version, appName, appName, appName, DefaultPort, appName, appName)
+`, appName, version, appName, appName, appName, DefaultPort,
+		appName, appName, appName, appName)
 }
 
 // pauseIfInteractive 双击运行时（输出是终端、程序即将退出）
