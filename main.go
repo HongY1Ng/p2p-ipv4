@@ -109,6 +109,9 @@ func main() {
 }
 
 // interactiveMenu 不带参数运行（双击 exe）时的交互菜单
+//
+// 这个菜单是 Windows 用户的主入口，所以数据面（--share / --forward）必须
+// 在这里也能走到 —— 光在命令行和帮助里支持是不够的。
 func interactiveMenu() int {
 	for {
 		fmt.Println()
@@ -118,7 +121,9 @@ func interactiveMenu() int {
 		fmt.Println()
 		fmt.Println("  [1] 探测本机 NAT 类型     （建议先跑这个，看打洞可不可行）")
 		fmt.Println("  [2] 广播模式 —— 我这边等着，把我的地址给对方")
+		fmt.Println("                 可以顺便【开放端口】给对方，比如远程桌面 3389")
 		fmt.Println("  [3] 连接模式 —— 我有对方的地址，主动连过去")
+		fmt.Println("                 可以顺便把本地端口【转发到对方】")
 		fmt.Println("  [4] 用法说明")
 		fmt.Println("  [0] 退出")
 		fmt.Println()
@@ -129,23 +134,21 @@ func interactiveMenu() int {
 			fmt.Println()
 			return 0
 		}
+		if choice == "" {
+			continue // 误按回车：重新打印菜单，别当成错误
+		}
 
 		switch choice {
 		case "1":
 			cmdProbe(nil)
 		case "2":
-			cmdAdvertise(nil)
+			if args, ok := menuAdvertiseArgs(); ok {
+				cmdAdvertise(args)
+			}
 		case "3":
-			fmt.Print("\n请粘贴对方的地址（形如 1.2.3.4:56789）: ")
-			addr, ok := readLine()
-			if !ok {
-				return 0
+			if args, ok := menuConnectArgs(); ok {
+				cmdConnect(args)
 			}
-			if addr == "" {
-				warn("没有输入地址")
-				continue
-			}
-			cmdConnect([]string{addr})
 		case "4":
 			usage()
 		case "0", "q", "Q", "exit", "quit":
@@ -154,6 +157,97 @@ func interactiveMenu() int {
 			warn("无效选择: %q", choice)
 		}
 		fmt.Println()
+	}
+}
+
+// menuAdvertiseArgs 交互式收集 advertise 的参数。
+// 第二个返回值为 false 表示用户中途放弃（stdin 关了）。
+func menuAdvertiseArgs() ([]string, bool) {
+	var args []string
+
+	fmt.Println()
+	plain("  可以开放本机端口给对方访问，比如远程桌面 %d。", 3389)
+	plain("  多个用逗号分隔；写 3389=192.168.1.5:3389 可以指向内网另一台机器。")
+	fmt.Print("  要开放的端口（直接回车 = 不开放，只做纯打洞）: ")
+
+	line, ok := readLine()
+	if !ok {
+		return nil, false
+	}
+	for _, p := range strings.Split(line, ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			args = append(args, "--share", p)
+		}
+	}
+	if len(args) == 0 {
+		return nil, true // 纯打洞
+	}
+
+	fmt.Println()
+	plain("  开放端口需要一个共享密钥 —— 它是这条路径上唯一的身份校验，")
+	plain("  没有它等于把端口开给任何猜到你地址的人。")
+	fmt.Print("  自己指定一个（直接回车 = 自动生成一个随机的）: ")
+
+	if tok, ok := readLine(); ok {
+		if tok = strings.TrimSpace(tok); tok != "" {
+			args = append(args, "--token", tok)
+		}
+		// 留空则让 runPunch 自动生成并打印出来
+	}
+	return args, true
+}
+
+// menuConnectArgs 交互式收集 connect 的参数
+func menuConnectArgs() ([]string, bool) {
+	fmt.Print("\n请粘贴对方的地址（形如 1.2.3.4:56789）: ")
+	addr, ok := readLine()
+	if !ok {
+		return nil, false
+	}
+	if addr = strings.TrimSpace(addr); addr == "" {
+		warn("没有输入地址")
+		return nil, false
+	}
+	args := []string{addr}
+
+	fmt.Println()
+	plain("  可以把本地端口转发到对方的端口，比如把对方的远程桌面拉到本地。")
+	plain("  格式 本地端口:对方端口，例如 13389:3389；多个用逗号分隔。")
+	fmt.Print("  要转发的规则（直接回车 = 不转发，只做纯打洞）: ")
+
+	line, ok := readLine()
+	if !ok {
+		return nil, false
+	}
+	var rules []string
+	for _, r := range strings.Split(line, ",") {
+		if r = strings.TrimSpace(r); r != "" {
+			rules = append(rules, r)
+		}
+	}
+	if len(rules) == 0 {
+		return args, true // 纯打洞
+	}
+	for _, r := range rules {
+		args = append(args, "--forward", r)
+	}
+
+	fmt.Println()
+	plain("  转发必须填对方给你的密钥，否则没法确认对端身份。")
+	for {
+		fmt.Print("  数据面密钥（输入 q 取消）: ")
+		tok, ok := readLine()
+		if !ok {
+			return nil, false
+		}
+		switch tok = strings.TrimSpace(tok); tok {
+		case "":
+			warn("必须填密钥")
+		case "q", "Q":
+			return nil, false
+		default:
+			return append(args, "--token", tok), true
+		}
 	}
 }
 
