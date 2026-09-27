@@ -1,0 +1,17 @@
+# 编译产物
+p2p
+p2p.exe
+p2p_*
+dist/
+
+# 运行日志
+*.log
+
+# 编辑器
+.vscode/
+.idea/
+*.swp
+
+# 系统
+.DS_Store
+Thumbs.db

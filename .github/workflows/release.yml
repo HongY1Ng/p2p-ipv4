@@ -1,0 +1,37 @@
+name: release
+
+# 打一个 v* 的 tag 就会自动编译各平台二进制并发到 Releases
+#   git tag v0.1.0 && git push --tags
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: 静态检查
+        run: go vet ./...
+
+      - name: 交叉编译
+        run: go run build.go
+
+      - name: 显示产物
+        run: ls -lh dist/
+
+      - name: 发布到 Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
